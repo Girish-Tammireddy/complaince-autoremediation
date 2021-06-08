@@ -15,7 +15,7 @@ Step. 3 Deploy the playbook(s)
 
 
 Step 1. Launch the AWS cloudformation stack :
-Sign in to the AWS Management Console from the account where the AWS Security Hub is currently configured, and launch the aws-sharr-deploy.template AWS CloudFormation template. 
+Sign in to the AWS Management Console from the account where the AWS Security Hub is currently configured, and launch the aws-auto-deploy.template AWS CloudFormation template. 
 
 Step 2. Configure service catalog portfolio permissions
  To grant access to IAM users, do one of the following:
