@@ -1,4 +1,3 @@
-Description: (SO0111) AWS Security Hub Automated Response & Remediation CIS Compliance Pack Permissions, v1.2.1
 AWSTemplateFormatVersion: "2010-09-09"
 Parameters:
   AdminAccountNumber:
