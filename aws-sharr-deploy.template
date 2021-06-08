@@ -1,0 +1,575 @@
+Description: (SO0111) AWS Security Hub Automated Response & Remediation Administrator Stack, v1.2.1
+AWSTemplateFormatVersion: "2010-09-09"
+Mappings:
+  SourceCode:
+    General:
+      S3Bucket: solutions
+      KeyPrefix: aws-security-hub-automated-response-and-remediation/v1.2.1
+  mappings:
+    sendAnonymousMetrics:
+      data: "Yes"
+Resources:
+  SHARRkeyE6BD0F56:
+    Type: AWS::KMS::Key
+    Properties:
+      KeyPolicy:
+        Statement:
+          - Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn:
+                  Fn::Join:
+                    - ""
+                    - - "arn:"
+                      - Ref: AWS::Partition
+                      - ":logs:"
+                      - Ref: AWS::Region
+                      - ":"
+                      - Ref: AWS::AccountId
+                      - :log-group:SO0111-SHARR-*
+            Effect: Allow
+            Principal:
+              Service:
+                - sns.amazonaws.com
+                - Fn::Join:
+                    - ""
+                    - - logs.
+                      - Ref: AWS::URLSuffix
+            Resource: "*"
+          - Action: kms:*
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - ":iam::"
+                    - Ref: AWS::AccountId
+                    - :root
+            Resource: "*"
+        Version: "2012-10-17"
+      EnableKeyRotation: true
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR-key/Resource
+  SHARRkeyAlias37E34763:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/SO0111-SHARR-Key
+      TargetKeyId:
+        Fn::GetAtt:
+          - SHARRkeyE6BD0F56
+          - Arn
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR-key/Alias/Resource
+  SHARRKeyC551FE02:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Fn::GetAtt:
+          - SHARRkeyE6BD0F56
+          - Arn
+      Description: KMS Customer Managed Key that SHARR will use to encrypt data
+      Name: /Solutions/SO0111/CMK_ARN
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR_Key/Resource
+  SHARRTopic229CFB9E:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: SHARR Playbook Topic (SO0111)
+      KmsMasterKeyId:
+        Fn::GetAtt:
+          - SHARRkeyE6BD0F56
+          - Arn
+      TopicName: SO0111-SHARR_Topic
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR-Topic/Resource
+  SHARRSNSTopicB940F479:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Ref: SHARRTopic229CFB9E
+      Description: SNS Topic ARN where SHARR will send status messages. This        topic can be useful for driving additional actions, such as email notifications,        trouble ticket updates.
+      Name: /Solutions/SO0111/SNS_Topic_ARN
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR_SNS_Topic/Resource
+  SHARRSendAnonymousMetricsCDAE439D:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Fn::FindInMap:
+          - mappings
+          - sendAnonymousMetrics
+          - data
+      Description: Flag to enable or disable sending anonymous metrics.
+      Name: /Solutions/SO0111/sendAnonymousMetrics
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR_SendAnonymousMetrics/Resource
+  SHARRversionAC0E4F96:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: v1.2.1
+      Description: Solution version for metrics.
+      Name: /Solutions/SO0111/version
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SHARR_version/Resource
+  SharrLambdaLayer5BF8F147:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      Content:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/layer.zip
+      CompatibleRuntimes:
+        - python3.6
+        - python3.7
+        - python3.8
+      Description: SO0111 SHARR Common functions used by the solution
+      LicenseInfo: https://www.apache.org/licenses/LICENSE-2.0
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/SharrLambdaLayer/Resource
+  orchestratorPolicy8045810D:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+              - ssm:PutParameter
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":ssm:*:"
+                  - Ref: AWS::AccountId
+                  - :parameter/Solutions/SO0111/*
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Resource:
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - :iam::*:role/SO0111-SHARR-Orchestrator-Member-*_
+                    - Ref: AWS::Region
+              - Fn::Join:
+                  - ""
+                  - - "arn:"
+                    - Ref: AWS::Partition
+                    - :iam::*:role/SO0111-SHARR-Remediation-*
+        Version: "2012-10-17"
+      PolicyName: SO0111-SHARR_Orchestrator
+      Roles:
+        - Ref: orchestratorRole46A9F242
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: Resource * is required for read-only policies used by orchestrator Lambda functions.
+  orchestratorRole46A9F242:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      Description: Lambda role to allow cross account read-only SHARR orchestrator functions
+      RoleName:
+        Fn::Join:
+          - ""
+          - - SO0111-SHARR-Orchestrator-Admin_
+            - Ref: AWS::Region
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Static names chosen intentionally to provide easy integration with playbook orchestrator step functions.
+  checkSSMDocState06AC440F:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/check_ssm_doc_state.py.zip
+      Role:
+        Fn::GetAtt:
+          - orchestratorRole46A9F242
+          - Arn
+      Description: Checks the status of an SSM Automation Document in the target account
+      Environment:
+        Variables:
+          log_level: info
+          sendAnonymousMetrics:
+            Fn::FindInMap:
+              - mappings
+              - sendAnonymousMetrics
+              - data
+          AWS_PARTITION:
+            Ref: AWS::Partition
+      FunctionName: SO0111-SHARR-checkSSMDocState
+      Handler: check_ssm_doc_state.lambda_handler
+      Layers:
+        - Ref: SharrLambdaLayer5BF8F147
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 60
+    DependsOn:
+      - orchestratorRole46A9F242
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: False positive. Access is provided via a policy
+          - id: W89
+            reason: There is no need to run this lambda in a VPC
+          - id: W92
+            reason: There is no need for Reserved Concurrency
+  execAutomation5D89E251:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/exec_ssm_doc.py.zip
+      Role:
+        Fn::GetAtt:
+          - orchestratorRole46A9F242
+          - Arn
+      Description: Executes an SSM Automation Document in a target account
+      Environment:
+        Variables:
+          log_level: info
+          sendAnonymousMetrics:
+            Fn::FindInMap:
+              - mappings
+              - sendAnonymousMetrics
+              - data
+          AWS_PARTITION:
+            Ref: AWS::Partition
+      FunctionName: SO0111-SHARR-execAutomation
+      Handler: exec_ssm_doc.lambda_handler
+      Layers:
+        - Ref: SharrLambdaLayer5BF8F147
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 60
+    DependsOn:
+      - orchestratorRole46A9F242
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: False positive. Access is provided via a policy
+          - id: W89
+            reason: There is no need to run this lambda in a VPC
+          - id: W92
+            reason: There is no need for Reserved Concurrency
+  monitorSSMExecStateB496B8AF:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/check_ssm_execution.py.zip
+      Role:
+        Fn::GetAtt:
+          - orchestratorRole46A9F242
+          - Arn
+      Description: Checks the status of an SSM automation document execution
+      Environment:
+        Variables:
+          log_level: info
+          sendAnonymousMetrics:
+            Fn::FindInMap:
+              - mappings
+              - sendAnonymousMetrics
+              - data
+          AWS_PARTITION:
+            Ref: AWS::Partition
+      FunctionName: SO0111-SHARR-monitorSSMExecState
+      Handler: check_ssm_execution.lambda_handler
+      Layers:
+        - Ref: SharrLambdaLayer5BF8F147
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 60
+    DependsOn:
+      - orchestratorRole46A9F242
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: False positive. Access is provided via a policy
+          - id: W89
+            reason: There is no need to run this lambda in a VPC
+          - id: W92
+            reason: There is no need for Reserved Concurrency
+  notifyPolicy320847DC:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource: "*"
+          - Action: securityhub:BatchUpdateFindings
+            Effect: Allow
+            Resource: "*"
+          - Action: ssm:GetParameter
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":ssm:*:"
+                  - Ref: AWS::AccountId
+                  - :parameter/Solutions/SO0111/*
+          - Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+                - SHARRkeyE6BD0F56
+                - Arn
+          - Action: sns:Publish
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:"
+                  - Ref: AWS::Partition
+                  - ":sns:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - :SO0111-SHARR_Topic
+        Version: "2012-10-17"
+      PolicyName: SO0111-SHARR_Orchestrator_Notifier
+      Roles:
+        - Ref: notifyRole40298120
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: Resource * is required for CloudWatch Logs and Security Hub policies used by core solution Lambda function for notifications.
+          - id: W58
+            reason: False positive. Access is provided via a policy
+  notifyRole40298120:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      Description: Lambda role to perform notification and logging from orchestrator step function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Static names chosen intentionally to provide easy integration with playbook orchestrator step functions.
+  sendNotifications1367638A:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/send_notifications.py.zip
+      Role:
+        Fn::GetAtt:
+          - notifyRole40298120
+          - Arn
+      Description: Sends notifications and log messages
+      Environment:
+        Variables:
+          log_level: info
+          sendAnonymousMetrics:
+            Fn::FindInMap:
+              - mappings
+              - sendAnonymousMetrics
+              - data
+          AWS_PARTITION:
+            Ref: AWS::Partition
+      FunctionName: SO0111-SHARR-sendNotifications
+      Handler: send_notifications.lambda_handler
+      Layers:
+        - Ref: SharrLambdaLayer5BF8F147
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 60
+    DependsOn:
+      - notifyRole40298120
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: False positive. Access is provided via a policy
+          - id: W89
+            reason: There is no need to run this lambda in a VPC
+          - id: W92
+            reason: There is no need for Reserved Concurrency due to low request rate
+  createCustomActionPolicyE424E925:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: cloudwatch:PutMetricData
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - securityhub:CreateActionTarget
+              - securityhub:DeleteActionTarget
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: SO0111-SHARR_Custom_Action
+      Roles:
+        - Ref: createCustomActionRoleF0047414
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: Resource * is required for CloudWatch Logs policies used on Lambda functions.
+  createCustomActionRoleF0047414:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      Description: Lambda role to allow creation of Security Hub Custom Actions
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Static names chosen intentionally to provide easy integration with playbook templates
+  CreateCustomActionE7A973F5:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Join:
+            - ""
+            - - solutions-
+              - Ref: AWS::Region
+        S3Key: aws-security-hub-automated-response-and-remediation/v1.2.1/lambda/createCustomAction.py.zip
+      Role:
+        Fn::GetAtt:
+          - createCustomActionRoleF0047414
+          - Arn
+      Description: Custom resource to create an action target in Security Hub
+      Environment:
+        Variables:
+          log_level: info
+          sendAnonymousMetrics:
+            Fn::FindInMap:
+              - mappings
+              - sendAnonymousMetrics
+              - data
+          AWS_PARTITION:
+            Ref: AWS::Partition
+      FunctionName: SO0111-SHARR-CustomAction
+      Handler: createCustomAction.lambda_handler
+      Layers:
+        - Ref: SharrLambdaLayer5BF8F147
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 60
+    DependsOn:
+      - createCustomActionRoleF0047414
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: False positive. See https://github.com/stelligent/cfn_nag/issues/422
+          - id: W89
+            reason: There is no need to run this lambda in a VPC
+          - id: W92
+            reason: There is no need for Reserved Concurrency due to low request rate
+  PlaybookServiceCatalog:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Join:
+          - ""
+          - - https://
+            - Fn::FindInMap:
+                - SourceCode
+                - General
+                - S3Bucket
+            - -reference.s3.amazonaws.com/
+            - Fn::FindInMap:
+                - SourceCode
+                - General
+                - KeyPrefix
+            - /aws-sharr-portolio-deploy.template
+      Parameters:
+        CreateCustomActionArn:
+          Fn::GetAtt:
+            - CreateCustomActionE7A973F5
+            - Arn
+    Metadata:
+      aws:cdk:path: SolutionDeployStack/PlaybookServiceCatalog
+    Condition: UseServiceCatalog
+Conditions:
+  UseServiceCatalog:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: AWS::Partition
+          - aws-cn
+
