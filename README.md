@@ -1,4 +1,4 @@
-# aws-config-compliance-autoremediation
+# AWS-Config-compliance-monitoring and autoremediation
 Deployment overview
 
  Step. 1 Launch the stack
